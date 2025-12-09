@@ -1,31 +1,46 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.0.2)
 project(alphabot2_door_detection)
 
-find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_python REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
-find_package(std_msgs REQUIRED)
-
-# Message generation
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/DoorDetection.msg"
-  DEPENDENCIES std_msgs
+find_package(catkin REQUIRED COMPONENTS
+  rospy
+  std_msgs
+  sensor_msgs
+  geometry_msgs
+  message_generation
+  cv_bridge
 )
 
-ament_python_install_package(${PROJECT_NAME})
+## Message files
+add_message_files(
+  FILES
+  DoorDetection.msg
+)
 
-install(
+## Generate message code
+generate_messages(
+  DEPENDENCIES
+  std_msgs
+)
+
+## Catkin package
+catkin_package(
+  CATKIN_DEPENDS
+    rospy
+    std_msgs
+    sensor_msgs
+    geometry_msgs
+    message_runtime
+    cv_bridge
+)
+
+include_directories(
+  ${catkin_INCLUDE_DIRS}
+)
+
+## Install Python scripts
+catkin_install_python(
   PROGRAMS
-    alphabot2_door_detection/door_detector_node.py
-    alphabot2_door_detection/door_search_node.py
-  DESTINATION lib/${PROJECT_NAME}
+    scripts/door_detector.py
+    scripts/door_search.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
-
-install(
-  DIRECTORY launch
-  DESTINATION share/${PROJECT_NAME}
-)
-
-ament_export_dependencies(rosidl_default_runtime)
-
-ament_package()

@@ -1,38 +1,34 @@
+#!/usr/bin/env python3
 import math
 
 import cv2
 import numpy as np
-import rclpy
-from rclpy.node import Node
+import rospy
 from cv_bridge import CvBridge
 from sensor_msgs.msg import Image
-
 from alphabot2_door_detection.msg import DoorDetection
 
 
-class DoorDetector(Node):
+class DoorDetector(object):
     """
-    Detects a 'door' marked with a colored sheet (default: red) in the camera image.
+    Detects a 'door' marked with a colored (red) sheet in the camera image.
     Publishes DoorDetection with bearing and a rough distance estimate.
     """
 
     def __init__(self):
-        super().__init__('door_detector')
         self.bridge = CvBridge()
         self.image_width = None
 
-        self.declare_parameter('image_topic', '/camera/image_raw')
-        self.declare_parameter('area_min', 1000)
+        image_topic = rospy.get_param('~image_topic', '/camera/image_raw')
+        self.area_min = rospy.get_param('~area_min', 1000)
 
-        image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
-        self.area_min = self.get_parameter('area_min').get_parameter_value().integer_value
+        self.pub = rospy.Publisher('/door_detection', DoorDetection, queue_size=10)
+        self.sub = rospy.Subscriber(image_topic, Image, self.image_cb, queue_size=1)
 
-        self.sub = self.create_subscription(Image, image_topic, self.image_cb, 10)
-        self.pub = self.create_publisher(DoorDetection, '/door_detection', 10)
+        rospy.loginfo("DoorDetector subscribing to %s", image_topic)
 
-        self.get_logger().info(f'Subscribing to {image_topic}')
-
-    def image_cb(self, msg: Image):
+    def image_cb(self, msg):
+        # Convert to OpenCV image
         cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         if self.image_width is None:
             self.image_width = cv_img.shape[1]
@@ -52,7 +48,8 @@ class DoorDetector(Node):
         mask = cv2.erode(mask, None, iterations=2)
         mask = cv2.dilate(mask, None, iterations=2)
 
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL,
+                                       cv2.CHAIN_APPROX_SIMPLE)
 
         det = DoorDetection()
         det.header = msg.header
@@ -63,29 +60,25 @@ class DoorDetector(Node):
         if contours:
             c = max(contours, key=cv2.contourArea)
             area = cv2.contourArea(c)
-
             if area > self.area_min:
                 x, y, w, h = cv2.boundingRect(c)
                 cx = x + w / 2.0
 
                 if self.image_width:
                     error_px = cx - self.image_width / 2.0
-                    fov_rad = math.radians(60.0)  # approximate camera FOV
-                    det.bearing = (error_px / self.image_width) * fov_rad
+                    fov_rad = math.radians(60.0)  # approximate FOV
+                    det.bearing = (error_px / float(self.image_width)) * fov_rad
 
-                # simple distance proxy: larger height => closer
                 det.distance = 1.0 / max(float(h), 1.0)
                 det.detected = True
 
         self.pub.publish(det)
 
 
-def main(args=None):
-    rclpy.init(args=args)
+def main():
+    rospy.init_node('door_detector')
     node = DoorDetector()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    rospy.spin()
 
 
 if __name__ == '__main__':

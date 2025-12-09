@@ -1,0 +1,18 @@
+<launch>
+  <!-- Vision node: detects the door and publishes /door_detection -->
+  <node pkg="alphabot2_door_detection"
+        type="door_detector"
+        name="door_detector"
+        output="screen">
+    <!-- Example: override image topic if needed -->
+    <!-- <param name="image_topic" value="/raspicam_node/image" /> -->
+  </node>
+
+  <!-- Controller node: searches and drives toward the door -->
+  <node pkg="alphabot2_door_detection"
+        type="door_search"
+        name="door_search"
+        output="screen">
+    <!-- You can override gains and speeds here if desired -->
+  </node>
+</launch>
