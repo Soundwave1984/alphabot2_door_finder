@@ -10,7 +10,7 @@ from alphabot2_door_detection.msg import DoorDetection
 
 class DoorDetector(object):
     """
-    Detects a 'door' marked with a red sheet in the camera image.
+    Detects a 'target' marked with a red sheet in the camera image.
 
     Subscribes to a compressed image topic (sensor_msgs/CompressedImage)
     and publishes DoorDetection with bearing and a rough distance estimate.
@@ -21,7 +21,7 @@ class DoorDetector(object):
         image_topic = rospy.get_param('~image_topic',
                                       '/camera/image/compressed')
 
-        # minimum blob area to count as a door
+        # minimum blob area to count as a target
         self.area_min = rospy.get_param('~area_min', 400)
         self.image_width = None
 
@@ -36,6 +36,7 @@ class DoorDetector(object):
                                     queue_size=1)
         rospy.loginfo("DoorDetector subscribing to: %s", image_topic)
 
+    # Handler for when new image is published
     def image_cb(self, msg):
         # Decode JPEG/PNG byte data into an OpenCV BGR image
         np_arr = np.frombuffer(msg.data, np.uint8)

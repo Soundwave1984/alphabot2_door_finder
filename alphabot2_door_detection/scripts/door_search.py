@@ -42,8 +42,6 @@ class DoorSearch(object):
         self.negativeRotate = False
         self.startRotating(1)
 
-        self.current_timeout = rospy.Time.now()
-
         self.obstacle_left = False
         self.obstacle_right = False
 
@@ -65,17 +63,6 @@ class DoorSearch(object):
             led = RGB_LED()
             led.function = 'setallred'
 
-            # red = (255 << 16)
-            # black = 0
-
-            # left_col = black if self.negativeRotate else red
-            # right_col = red if self.negativeRotate else black
-
-            # led.led1_color = left_col
-            # led.led2_color = left_col
-            # led.led3_color = right_col
-            # led.led4_color = right_col
-            # led.function = 'setLED'
             self.pub_led.publish(led)
         
         self.negativeRotate = spin < 0
@@ -94,7 +81,7 @@ class DoorSearch(object):
             led.function = 'setallgreen'
             self.pub_led.publish(led)
         
-        self.current_timeout = rospy.Time.now() + self.detection_timeout
+        self.current_timeout = rospy.Time.now() + rospy.Duration(self.detection_timeout)
 
     def set_obstacle_left(self, msg):
         self.obstacle_left = msg.obstacle
@@ -147,7 +134,6 @@ class DoorSearch(object):
                 rospy.loginfo("targetting timed out, back to searching")
             else:
                 bearing = self.last_detection.bearing
-                distance = self.last_detection.distance
 
                 # Turn to center the door
                 cmd.angular.z = -self.turn_gain * bearing
