@@ -12,6 +12,7 @@ class State(Enum):
     ROTATING = 0 # When we are rotating to look for the target
     TARGETING = 1 # when we detected target so should not be interrupted
     MOVING = 2 # When we are just moving forward
+    BACKOFF = 3
 
 class DoorSearch(object):
     """
@@ -23,12 +24,13 @@ class DoorSearch(object):
     """
 
     def __init__(self):
+        self.state = State.ROTATING
         # Spin speed when searching
-        self.search_angular_speed = rospy.get_param("~search_angular_speed", 0.2)
+        self.search_angular_speed = rospy.get_param("~search_angular_speed", 4.55)
         # time counter required to check surrounding when going in a line
-        self.move_timeout = rospy.get_param("~move_timeout", 2)
+        self.move_timeout = rospy.get_param("~move_timeout", 8)
         # Forward speed when approaching
-        self.approach_linear_speed = rospy.get_param("~approach_linear_speed", 0.02)
+        self.approach_linear_speed = rospy.get_param("~approach_linear_speed", 0.225)
         # How strongly to turn based on bearing
         self.turn_gain = rospy.get_param("~turn_gain", 1.0)
         # How long a detection is considered "fresh" (seconds)
@@ -39,6 +41,8 @@ class DoorSearch(object):
 
         self.negativeRotate = False
         self.startRotating(1)
+
+        self.current_timeout = rospy.Time.now()
 
         self.obstacle_left = False
         self.obstacle_right = False
@@ -77,7 +81,8 @@ class DoorSearch(object):
         self.negativeRotate = spin < 0
         if (self.negativeRotate):
             spin = -spin
-        self.current_timeout = rospy.Time.now() + spin / self.search_angular_speed
+        spin_seconds = float(spin) * 7.82 / float(self.search_angular_speed)
+        self.current_timeout = rospy.Time.now() + rospy.Duration(spin_seconds)
 
     def detection_cb(self, msg):
         self.last_detection = msg
@@ -93,17 +98,19 @@ class DoorSearch(object):
 
     def set_obstacle_left(self, msg):
         self.obstacle_left = msg.obstacle
-        if (self.obstacle_left or self.obstacle_right) and self.state != State.ROTATING:
-            rotation = 0.75 if random() < 0.5 else 0.75
-            rospy.loginfo("Obstacle detected on left, rotating %s", rotation)
-            self.startRotating(rotation)
+        if (self.obstacle_left or self.obstacle_right) and self.state != State.ROTATING and self.state != State.BACKOFF:
+            rotation = 0.75 
+            rospy.loginfo("Obstacle detected on left, backing off")
+            self.state = State.BACKOFF
+            self.current_timeout = rospy.Time.now() + rospy.Duration(0.05 * self.move_timeout)
     
     def set_obstacle_right(self, msg):
         self.obstacle_left = msg.obstacle
-        if (self.obstacle_left or self.obstacle_right) and self.state != State.ROTATING:
-            rotation = 0.75 if random() < 0.5 else 0.75
-            rospy.loginfo("Obstacle detected on left, rotating %s", rotation)
-            self.startRotating(rotation)
+        if (self.obstacle_left or self.obstacle_right) and self.state != State.ROTATING and self.state != State.BACKOFF:
+            rotation = 0.75
+            rospy.loginfo("Obstacle detected on right, backing off")
+            self.state = State.BACKOFF
+            self.current_timeout = rospy.Time.now() + rospy.Duration(0.05 * self.move_timeout)
 
     def update(self, event):
         cmd = Twist()
@@ -112,21 +119,28 @@ class DoorSearch(object):
         now = rospy.Time.now()
 
         timingOut = now > self.current_timeout
-        if self.state == State.ROTATING:
+        if self.state == State.BACKOFF:
+            if timingOut:
+                rospy.loginfo("Backoff complete, start rotating 0.75")
+                self.startRotating(0.75)
+            else:
+                cmd.angular.z = 0
+                cmd.linear.x = -self.approach_linear_speed
+        elif self.state == State.ROTATING:
             if timingOut:
                 if self.obstacle_left or self.obstacle_right:
                     self.startRotating(-0.25 if self.negativeRotate else 0.25)
                     rospy.loginfo("Rotated but still blocked, will keep rotating a quarter way")
                 else:
                     self.state = State.MOVING
-                    self.current_timeout = now + self.move_timeout
+                    self.current_timeout = now + rospy.Duration(self.move_timeout)
                     rospy.loginfo("rotating done, moving now")
 
                     led = RGB_LED()
                     led.function = 'setallblue'
                     self.pub_led.publish(led)
             else:
-                cmd.angluar.z = (-1 if self.negativeRotate else 1) * self.search_angular_speed
+                cmd.angular.z = (-1 if self.negativeRotate else 1) * self.search_angular_speed
         elif self.state == State.TARGETING:
             if timingOut:
                 self.startRotating(1)
@@ -146,7 +160,7 @@ class DoorSearch(object):
                 self.startRotating(1)
                 rospy.loginfo("moving welfare check")
             else:
-                cmd.angular.z = -self.turn_gain * bearing
+                cmd.angular.z = 0
                 cmd.linear.x = self.approach_linear_speed
 
         self.pub_cmd.publish(cmd)
